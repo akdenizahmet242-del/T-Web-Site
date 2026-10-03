@@ -5,10 +5,16 @@
  */
 import "dotenv/config";
 
+import { randomBytes } from "node:crypto";
+
 import { PrismaPg } from "@prisma/adapter-pg";
 import bcrypt from "bcryptjs";
 
 import {
+  OrderEventType,
+  OrderStatus,
+  PaymentProvider,
+  PaymentStatus,
   PrismaClient,
   type Prisma,
   ProductStatus,
@@ -332,11 +338,8 @@ async function seedCatalog() {
       const detailData = { ...detail, specs: detail.specs as Prisma.InputJsonValue };
       await prisma.product.upsert({
         where: { slug: product.slug },
-        update: {
-          ...product,
-          categoryId,
-          detail: { upsert: { create: detailData, update: detailData } },
-        },
+        // Var olan ürüne dokunma: panelden yapılan düzenlemeler seed ile ezilmesin.
+        update: {},
         create: {
           ...product,
           categoryId,
@@ -390,17 +393,291 @@ async function seedShowcase() {
 
   await prisma.showcaseBanner.upsert({
     where: { key: "home-clock-showcase" },
-    update: data,
+    update: {}, // panel düzenlemeleri korunur
     create: { key: "home-clock-showcase", ...data },
   });
   console.log("  ✓ Vitrin: home-clock-showcase");
 }
 
+async function seedUsers() {
+  const users = [
+    {
+      email: "editor@tws.local",
+      name: "Vitrin Editörü",
+      role: Role.EDITOR,
+      password: "Editor123!",
+    },
+    {
+      email: "musteri@tws.local",
+      name: "Ayşe Yılmaz",
+      role: Role.CUSTOMER,
+      password: "Musteri123!",
+    },
+  ];
+  for (const { password, ...user } of users) {
+    await prisma.user.upsert({
+      where: { email: user.email },
+      update: { role: user.role },
+      create: { ...user, passwordHash: await bcrypt.hash(password, 12) },
+    });
+  }
+  console.log(
+    "  ✓ Editör: editor@tws.local / Editor123! · Müşteri: musteri@tws.local / Musteri123!",
+  );
+}
+
+/** Ürün sayfası sahneleri: anahtar `product:<slug>`; içerik ve slotlar panelden düzenlenir. */
+async function seedProductScenes() {
+  const scenes = [
+    {
+      slug: "hilton-80-lake-banyo-dolabi",
+      template: ShowcaseTemplate.CABINET_REVEAL,
+      title: "Kapağın ardındaki düzen",
+      eyebrow: "Hilton 80 · Lake banyo dolabı",
+      steps: [
+        {
+          title: "Yavaşlatıcılı kapaklar",
+          body: "110° açılan Blum menteşeler, son 3 cm'de kendiliğinden yavaşlar.",
+        },
+        {
+          title: "Her şeyin bir yeri var",
+          body: "Ayarlanabilir cam raflar ve tam açılım frenli çekmece.",
+        },
+        { title: "Neme karşı", body: "Suya dayanıklı MDF-lam gövde, kenarları ABS bantlı." },
+      ],
+    },
+    {
+      slug: "pura-5-asamali-su-aritma",
+      template: ShowcaseTemplate.LAYER_STACK,
+      title: "Beş katmanda saf su",
+      eyebrow: "Pura · 5 aşamalı arıtma",
+      steps: [
+        { title: "Sediment ve karbon", body: "Kum, pas ve klor; ilk iki aşamada tutulur." },
+        { title: "Membran", body: "0,0001 mikron gözenek: ağır metaller ve bakteriler geçemez." },
+        { title: "Mineral", body: "Son aşama suya kalsiyum ve magnezyumu geri kazandırır." },
+      ],
+    },
+    {
+      slug: "folio-pirinc-kitap-ayraci",
+      template: ShowcaseTemplate.BOOKMARK_FLIP,
+      title: "Kaldığınız sayfa",
+      eyebrow: "Folio · Pirinç kitap ayracı",
+      steps: [
+        { title: "0,4 mm pirinç", body: "Sayfaya iz bırakmayan yuvarlatılmış kenarlar." },
+        { title: "İpek püskül", body: "Kitabın dışından bile hangi sayfada olduğunuzu söyler." },
+      ],
+    },
+  ];
+
+  for (const scene of scenes) {
+    const product = await prisma.product.findUnique({
+      where: { slug: scene.slug },
+      select: { id: true },
+    });
+    const data = {
+      placement: "CATEGORY_TOP" as const,
+      template: scene.template,
+      eyebrow: scene.eyebrow,
+      title: scene.title,
+      productId: product?.id ?? null,
+      content: { steps: scene.steps },
+      isActive: true,
+    };
+    await prisma.showcaseBanner.upsert({
+      where: { key: `product:${scene.slug}` },
+      update: {},
+      create: { key: `product:${scene.slug}`, ...data },
+    });
+  }
+  console.log(`  ✓ Ürün sahneleri: ${scenes.length}`);
+}
+
+/** Deterministik sözde-rastgele (mulberry32) → her seed aynı demo veriyi üretir. */
+function random(seed: number) {
+  return () => {
+    seed |= 0;
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * Analitik ekranı boş görünmesin diye son 60 güne yayılmış demo siparişler.
+ * Stok düşmez; "DEMO-" önekiyle ayırt edilir. Kapatmak için SEED_DEMO_ORDERS=false.
+ */
+async function seedDemoOrders() {
+  if (process.env.SEED_DEMO_ORDERS === "false") return;
+  if (await prisma.order.count({ where: { orderNumber: { startsWith: "DEMO-" } } })) {
+    console.log("  ✓ Demo siparişler zaten var");
+    return;
+  }
+
+  const rand = random(20261003);
+  const products = await prisma.product.findMany({
+    where: { status: ProductStatus.ACTIVE },
+    select: { id: true, name: true, sku: true, priceMinor: true, vatRate: true },
+  });
+  const customer = await prisma.user.findUnique({
+    where: { email: "musteri@tws.local" },
+    select: { id: true },
+  });
+  const cities = [
+    ["İstanbul", "Kadıköy"],
+    ["Ankara", "Çankaya"],
+    ["İzmir", "Karşıyaka"],
+    ["Bursa", "Nilüfer"],
+    ["Antalya", "Muratpaşa"],
+  ];
+  const names = [
+    "Elif Kaya",
+    "Mehmet Demir",
+    "Zeynep Şahin",
+    "Can Öztürk",
+    "Deniz Arslan",
+    "Ayşe Yılmaz",
+  ];
+
+  const now = Date.now();
+  let created = 0;
+  for (let i = 0; i < 140; i += 1) {
+    const daysAgo = Math.floor(rand() ** 1.4 * 60);
+    const placedAt = new Date(now - daysAgo * 86_400_000 - Math.floor(rand() * 20) * 3_600_000);
+    const lines = Array.from({ length: 1 + Math.floor(rand() * 2.2) }, () => {
+      const product = products[Math.floor(rand() * products.length)];
+      return { product, quantity: 1 + Math.floor(rand() * 1.6) };
+    }).filter(
+      (line, index, all) => all.findIndex((l) => l.product.id === line.product.id) === index,
+    );
+
+    const subtotal = lines.reduce((sum, line) => sum + line.product.priceMinor * line.quantity, 0);
+    const shipping = subtotal >= 150_000 ? 0 : 14_990;
+    const tax = lines.reduce(
+      (sum, line) =>
+        sum +
+        Math.round(
+          (line.product.priceMinor * line.quantity * line.product.vatRate) /
+            (100 + line.product.vatRate),
+        ),
+      Math.round((shipping * 20) / 120),
+    );
+
+    const roll = rand();
+    const paid = roll > 0.12;
+    const status: OrderStatus = !paid
+      ? OrderStatus.CANCELLED
+      : daysAgo > 7
+        ? OrderStatus.DELIVERED
+        : daysAgo > 3
+          ? OrderStatus.SHIPPED
+          : daysAgo > 1
+            ? OrderStatus.PROCESSING
+            : OrderStatus.PAID;
+    const paidAt = paid ? new Date(placedAt.getTime() + 4 * 60_000) : null;
+    const [city, district] = cities[Math.floor(rand() * cities.length)];
+    const fullName = names[Math.floor(rand() * names.length)];
+    const failedFirst = paid && rand() < 0.15;
+
+    await prisma.order.create({
+      data: {
+        orderNumber: `DEMO-${String(i + 1).padStart(4, "0")}`,
+        accessToken: randomBytes(24).toString("base64url"),
+        userId: fullName === "Ayşe Yılmaz" ? (customer?.id ?? null) : null,
+        email: `${fullName.split(" ")[0].toLowerCase().replace("ş", "s").replace("ö", "o")}@example.com`,
+        phone: "05321234567",
+        status,
+        paymentStatus: paid ? PaymentStatus.CAPTURED : PaymentStatus.FAILED,
+        paymentProvider: PaymentProvider.MOCK,
+        paymentReference: `mock_demo_${i}`,
+        subtotalMinor: subtotal,
+        shippingMinor: shipping,
+        taxMinor: tax,
+        totalMinor: subtotal + shipping,
+        shippingAddress: {
+          fullName,
+          line1: "Örnek Mah. Demo Sok. No: 1",
+          district,
+          city,
+          country: "TR",
+        },
+        carrier:
+          status === OrderStatus.SHIPPED || status === OrderStatus.DELIVERED
+            ? "Yurtiçi Kargo"
+            : null,
+        trackingNumber:
+          status === OrderStatus.SHIPPED || status === OrderStatus.DELIVERED
+            ? `YK${100000 + i}`
+            : null,
+        placedAt,
+        paidAt,
+        shippedAt:
+          status === OrderStatus.SHIPPED || status === OrderStatus.DELIVERED
+            ? new Date(placedAt.getTime() + 86_400_000)
+            : null,
+        deliveredAt:
+          status === OrderStatus.DELIVERED ? new Date(placedAt.getTime() + 3 * 86_400_000) : null,
+        cancelledAt: paid ? null : new Date(placedAt.getTime() + 30 * 60_000),
+        createdAt: placedAt,
+        items: {
+          create: lines.map(({ product, quantity }) => ({
+            productId: product.id,
+            productName: product.name,
+            sku: product.sku,
+            unitPriceMinor: product.priceMinor,
+            vatRate: product.vatRate,
+            quantity,
+            lineTotalMinor: product.priceMinor * quantity,
+          })),
+        },
+        events: {
+          create: [
+            {
+              type: OrderEventType.CREATED,
+              message: "Sipariş oluşturuldu (demo).",
+              createdAt: placedAt,
+            },
+            ...(failedFirst || !paid
+              ? [
+                  {
+                    type: OrderEventType.PAYMENT_FAILED,
+                    message: "Banka işlemi reddetti (demo).",
+                    createdAt: new Date(placedAt.getTime() + 2 * 60_000),
+                  },
+                ]
+              : []),
+            ...(paid
+              ? [
+                  {
+                    type: OrderEventType.PAYMENT_SUCCEEDED,
+                    message: "Ödeme tahsil edildi (demo).",
+                    createdAt: paidAt!,
+                  },
+                ]
+              : [
+                  {
+                    type: OrderEventType.STATUS_CHANGED,
+                    message: "Ödeme süresi doldu (demo).",
+                    createdAt: new Date(placedAt.getTime() + 30 * 60_000),
+                  },
+                ]),
+          ],
+        },
+      },
+    });
+    created += 1;
+  }
+  console.log(`  ✓ Demo siparişler: ${created}`);
+}
+
 async function main() {
   console.log("🌱 Seed başlıyor…");
   await seedAdmin();
+  await seedUsers();
   await seedCatalog();
   await seedShowcase();
+  await seedProductScenes();
+  await seedDemoOrders();
   console.log("✅ Seed tamamlandı.");
 }
 

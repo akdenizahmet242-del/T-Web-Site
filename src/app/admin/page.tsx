@@ -1,4 +1,5 @@
 import { AlertTriangle, Package, ShoppingCart, Wallet } from "lucide-react";
+import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,7 +15,8 @@ import { getDashboard } from "@/features/admin/queries";
 import { resolveLayers, showcaseTemplates } from "@/features/showcase/templates";
 import { formatMoney } from "@/lib/money";
 
-export default async function AdminDashboardPage() {
+export default async function AdminDashboardPage({ searchParams }: PageProps<"/admin">) {
+  const noAccess = (await searchParams).yetki === "yok";
   const data = await getDashboard();
 
   const stats = [
@@ -30,6 +32,12 @@ export default async function AdminDashboardPage() {
         <h1 className="font-display text-5xl">Genel bakış</h1>
         <p className="mt-2 text-sm text-muted-foreground">Mağazanın anlık durumu.</p>
       </header>
+
+      {noAccess ? (
+        <p role="alert" className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+          Bu bölüm için yetkiniz yok (yalnızca yönetici).
+        </p>
+      ) : null}
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {stats.map(({ label, value, icon: Icon }) => (
@@ -66,7 +74,11 @@ export default async function AdminDashboardPage() {
                 <TableBody>
                   {data.lowStock.map((product) => (
                     <TableRow key={product.id}>
-                      <TableCell className="whitespace-normal">{product.name}</TableCell>
+                      <TableCell className="whitespace-normal">
+                        <Link href={`/admin/urunler/${product.id}`} className="hover:underline">
+                          {product.name}
+                        </Link>
+                      </TableCell>
                       <TableCell className="font-mono text-xs">{product.sku}</TableCell>
                       <TableCell className="text-right tabular-nums">
                         {product.stock} / {product.lowStockThreshold}
@@ -94,7 +106,11 @@ export default async function AdminDashboardPage() {
               const { layers, issues } = resolveLayers(banner.template, banner.layers);
               const custom = Object.keys(layers).length;
               return (
-                <div key={banner.id} className="rounded-lg border p-4">
+                <Link
+                  key={banner.id}
+                  href={`/admin/vitrin/${banner.id}`}
+                  className="block rounded-lg border p-4 transition-colors hover:border-brass/50"
+                >
                   <div className="flex items-center justify-between gap-4">
                     <div>
                       <p className="font-medium">{banner.title}</p>
@@ -118,7 +134,7 @@ export default async function AdminDashboardPage() {
                       ))}
                     </ul>
                   ) : null}
-                </div>
+                </Link>
               );
             })}
           </CardContent>
@@ -131,9 +147,7 @@ export default async function AdminDashboardPage() {
         </CardHeader>
         <CardContent>
           {data.recentOrders.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Henüz sipariş yok. Ödeme akışı (PaymentService) Faz 2&apos;de bağlanacak.
-            </p>
+            <p className="text-sm text-muted-foreground">Henüz sipariş yok.</p>
           ) : (
             <Table>
               <TableHeader>
@@ -147,7 +161,11 @@ export default async function AdminDashboardPage() {
               <TableBody>
                 {data.recentOrders.map((order) => (
                   <TableRow key={order.id}>
-                    <TableCell className="font-mono text-xs">{order.orderNumber}</TableCell>
+                    <TableCell className="font-mono text-xs">
+                      <Link href={`/admin/siparisler/${order.id}`} className="hover:underline">
+                        {order.orderNumber}
+                      </Link>
+                    </TableCell>
                     <TableCell>{order.email}</TableCell>
                     <TableCell>
                       <Badge variant="outline">{order.status}</Badge>
