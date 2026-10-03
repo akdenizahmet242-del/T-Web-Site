@@ -1,5 +1,6 @@
 "use client";
 
+import { useSyncExternalStore } from "react";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
@@ -95,3 +96,12 @@ export const selectItemCount = (state: CartState) =>
 
 export const selectSubtotalMinor = (state: CartState) =>
   state.lines.reduce((sum, line) => sum + line.priceMinor * line.quantity, 0);
+
+/** localStorage'dan sepet yüklendi mi? (SSR'da her zaman false → hydration güvenli) */
+export function useCartHydrated() {
+  return useSyncExternalStore(
+    (onChange) => useCartStore.persist.onFinishHydration(onChange),
+    () => useCartStore.persist.hasHydrated(),
+    () => false,
+  );
+}

@@ -20,6 +20,12 @@ export default async function LoginPage({ searchParams }: PageProps<"/giris">) {
           Sepetiniz tüm cihazlarınızda senkron kalsın.
         </p>
         <LoginForm callbackUrl={typeof callbackUrl === "string" ? callbackUrl : "/"} />
+        <p className="mt-6 text-sm text-muted-foreground">
+          Hesabınız yok mu?{" "}
+          <Link href="/kayit" className="text-foreground underline underline-offset-4">
+            Hesap oluşturun
+          </Link>
+        </p>
       </div>
     </main>
   );

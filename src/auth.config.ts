@@ -20,8 +20,10 @@ export const authConfig = {
   callbacks: {
     /** Proxy'deki iyimser (optimistic) kontrol; asıl yetki kontrolü sunucu bileşenlerinde. */
     authorized({ auth, request: { nextUrl } }) {
-      if (!nextUrl.pathname.startsWith("/admin")) return true;
-      if (!auth?.user) return false; // → /giris?callbackUrl=…
+      const { pathname } = nextUrl;
+      if (pathname.startsWith("/hesap")) return Boolean(auth?.user); // false → /giris?callbackUrl=…
+      if (!pathname.startsWith("/admin")) return true;
+      if (!auth?.user) return false;
       if (!isStaff(auth.user.role)) return Response.redirect(new URL("/", nextUrl));
       return true;
     },

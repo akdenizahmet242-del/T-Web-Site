@@ -129,7 +129,7 @@ export default async function ProductPage({ params }: PageProps<"/urun/[slug]">)
             accent={product.category.accentColor}
             seed={product.slug}
             sizes="(min-width: 1024px) 58vw, 100vw"
-            priority
+            preload
             className="rounded-3xl border"
           />
           {product.gallery.length > 1 ? (

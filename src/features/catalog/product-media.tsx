@@ -16,7 +16,7 @@ export function ProductMedia({
   accent,
   seed,
   sizes,
-  priority = false,
+  preload = false,
   className,
 }: {
   image: ImageDTO | null;
@@ -25,7 +25,8 @@ export function ProductMedia({
   accent: string | null;
   seed: string;
   sizes: string;
-  priority?: boolean;
+  /** LCP görseli ise true (Next 16: `priority` yerine `preload`). */
+  preload?: boolean;
   className?: string;
 }) {
   return (
@@ -36,7 +37,7 @@ export function ProductMedia({
           alt={image.alt || name}
           fill
           sizes={sizes}
-          priority={priority}
+          preload={preload}
           className="object-cover"
           placeholder={image.blurDataUrl ? "blur" : "empty"}
           blurDataURL={image.blurDataUrl ?? undefined}

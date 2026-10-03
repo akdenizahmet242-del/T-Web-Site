@@ -13,12 +13,13 @@ export function LayerSlot({
   asset,
   fallback,
   sizes,
-  priority = false,
+  eager = false,
 }: {
   asset?: LayerAsset;
   fallback: ReactNode;
   sizes: string;
-  priority?: boolean;
+  /** Sahne ilk ekrandaysa true: tembel yükleme yerine hemen indir. */
+  eager?: boolean;
 }) {
   if (!asset) return fallback;
 
@@ -28,7 +29,7 @@ export function LayerSlot({
       alt={asset.alt}
       fill
       sizes={sizes}
-      priority={priority}
+      loading={eager ? "eager" : "lazy"}
       draggable={false}
       className="object-contain select-none"
       placeholder={asset.blurDataUrl ? "blur" : "empty"}

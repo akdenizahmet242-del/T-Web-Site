@@ -1,6 +1,8 @@
+import { UserRound } from "lucide-react";
 import Link from "next/link";
 
 import { siteConfig } from "@/config/site";
+import { buttonVariants } from "@/components/ui/button";
 import { CartButton } from "@/features/cart/cart-button";
 import type { CategoryDTO } from "@/features/catalog/types";
 
@@ -36,7 +38,17 @@ export function SiteHeader({ categories }: { categories: CategoryDTO[] }) {
             ))}
           </ul>
         </nav>
-        <CartButton />
+        <div className="flex items-center gap-1">
+          {/* Statik link: oturum durumu sunucuda okunmaz → header CDN'de önbelleklenebilir. */}
+          <Link
+            href="/hesap"
+            aria-label="Hesabım"
+            className={buttonVariants({ variant: "ghost", size: "icon" })}
+          >
+            <UserRound className="size-5" />
+          </Link>
+          <CartButton />
+        </div>
       </div>
     </header>
   );

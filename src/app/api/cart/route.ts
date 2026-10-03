@@ -5,6 +5,7 @@ import type { CartLine } from "@/features/cart/cart-store";
 import { cartSyncRequestSchema } from "@/features/cart/schema";
 import { ProductStatus } from "@/generated/prisma/enums";
 import { db } from "@/lib/db";
+import { rateLimits } from "@/lib/rate-limit";
 
 const MAX_QUANTITY = 99;
 
@@ -59,6 +60,10 @@ export async function PUT(request: Request) {
   const session = await auth();
   const userId = session?.user?.id;
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  if (!(await rateLimits.cart.limit(userId)).ok) {
+    return NextResponse.json({ error: "rate_limited" }, { status: 429 });
+  }
 
   const parsed = cartSyncRequestSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {

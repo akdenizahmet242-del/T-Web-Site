@@ -43,3 +43,6 @@ next-env.d.ts
 
 # prisma (npm install → postinstall ile yeniden üretilir)
 /src/generated/
+
+# yerel yüklemeler (STORAGE_DRIVER=local)
+/storage/

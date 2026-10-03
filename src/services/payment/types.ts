@@ -76,7 +76,13 @@ export type PaymentVerification =
       amountMinor: number;
       status: "AUTHORIZED" | "CAPTURED";
     }
-  | { ok: false; orderId?: string; reason: string };
+  | {
+      ok: false;
+      orderId?: string;
+      reason: string;
+      /** DECLINED: banka reddetti (sipariş "ödeme başarısız" olur) · INVALID: imza/format hatası (sipariş değiştirilmez) */
+      code: "DECLINED" | "INVALID";
+    };
 
 export type RefundInput = {
   providerReference: string;
