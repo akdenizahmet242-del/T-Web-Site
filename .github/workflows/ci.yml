@@ -1,9 +1,9 @@
 name: CI
 
 on:
+  # Her dalda push (PR'lar dahil aynı depodaki dallardan gelir) + elle tetikleme
   push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
