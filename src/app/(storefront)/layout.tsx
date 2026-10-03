@@ -3,6 +3,7 @@ import { SiteHeader } from "@/components/layout/site-header";
 import { SmoothScroll } from "@/components/providers/smooth-scroll";
 import { CartSheet } from "@/features/cart/cart-sheet";
 import { CartSync } from "@/features/cart/cart-sync";
+import { ConsentBanner } from "@/features/consent/consent-banner";
 import { getCategories } from "@/features/catalog/queries";
 
 /**
@@ -21,6 +22,7 @@ export default async function StorefrontLayout({ children }: LayoutProps<"/">) {
       <main>{children}</main>
       <SiteFooter categories={categories} />
       <CartSheet />
+      <ConsentBanner />
     </>
   );
 }

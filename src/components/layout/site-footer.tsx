@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { siteConfig } from "@/config/site";
 import type { CategoryDTO } from "@/features/catalog/types";
+import { ConsentPreferencesButton } from "@/features/consent/consent-banner";
 
 export function SiteFooter({ categories }: { categories: CategoryDTO[] }) {
   return (
@@ -34,9 +35,17 @@ export function SiteFooter({ categories }: { categories: CategoryDTO[] }) {
               </Link>
             </li>
             <li>
-              <Link href="/admin" className="hover:text-foreground">
-                Yönetim paneli
+              <Link href="/kayit" className="hover:text-foreground">
+                Hesap oluştur
               </Link>
+            </li>
+            <li>
+              <Link href="/hesap" className="hover:text-foreground">
+                Siparişlerim
+              </Link>
+            </li>
+            <li>
+              <ConsentPreferencesButton className="hover:text-foreground" />
             </li>
           </ul>
         </div>

@@ -12,8 +12,34 @@ const securityHeaders = [
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
 ];
 
+// Yerel depo rotaları dinamik dosya yolu kullandığından (path.resolve) dosya izleyici
+// tüm projeyi imaja dahil etmeye çalışır; çalışma zamanında gerekmeyenleri dışla.
+const notNeededAtRuntime = [
+  "./storage/**/*",
+  "./src/**/*",
+  "./tests/**/*",
+  "./docs/**/*",
+  "./prisma/**/*",
+  "./.github/**/*",
+  "./*.md",
+  "./Dockerfile",
+  "./docker-compose.yml",
+  "./components.json",
+  "./*.config.{ts,mjs}",
+  "./tsconfig.json",
+  "./tsconfig.tsbuildinfo",
+  "./package-lock.json",
+];
+
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // Docker imajı için minimal çıktı (Dockerfile NEXT_OUTPUT=standalone ile derler).
+  // Yerelde `npm start` ile çalışmaya devam etsin diye varsayılan kapalı.
+  output: process.env.NEXT_OUTPUT === "standalone" ? "standalone" : undefined,
+  outputFileTracingExcludes: {
+    "/media/**": notNeededAtRuntime,
+    "/api/admin/uploads": notNeededAtRuntime,
+  },
   images: {
     // Tarayıcı destekliyorsa AVIF, değilse WebP; orijinal format asla gönderilmez.
     formats: ["image/avif", "image/webp"],

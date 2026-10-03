@@ -19,5 +19,34 @@ services:
       timeout: 3s
       retries: 10
 
+  # Üretim benzeri tam yığın:  docker compose --profile app up --build
+  migrate:
+    profiles: ["app"]
+    build: { context: ., target: migrator }
+    environment:
+      DATABASE_URL: postgresql://tws:tws_dev_password@postgres:5432/tws?schema=public
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@tws.local}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-Admin123!}
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  app:
+    profiles: ["app"]
+    build: { context: ., target: runner }
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://tws:tws_dev_password@postgres:5432/tws?schema=public
+      AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET tanımlayın (.env)}
+      AUTH_TRUST_HOST: "true"
+      PAYMENT_PROVIDER: mock
+      REVALIDATE_SECRET: ${REVALIDATE_SECRET:-degistir-beni-revalidate}
+      CRON_SECRET: ${CRON_SECRET:-degistir-beni-cron}
+    volumes:
+      - tws-storage:/app/storage
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
 volumes:
   tws-pgdata:
+  tws-storage:

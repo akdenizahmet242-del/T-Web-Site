@@ -1,8 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
+import Script from "next/script";
 
 import { siteConfig } from "@/config/site";
-import { AnalyticsScripts } from "@/services/analytics/analytics-scripts";
+import { AnalyticsScripts, CONSENT_DEFAULTS_SCRIPT } from "@/services/analytics/analytics-scripts";
 
 import "./globals.css";
 
@@ -51,6 +52,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`dark ${geistSans.variable} ${geistMono.variable} ${instrumentSerif.variable}`}
     >
       <body className="min-h-svh font-sans antialiased">
+        {CONSENT_DEFAULTS_SCRIPT ? (
+          // Consent Mode v2: GTM'den önce "denied" varsayılanı (KVKK)
+          <Script id="consent-defaults" strategy="beforeInteractive">
+            {CONSENT_DEFAULTS_SCRIPT}
+          </Script>
+        ) : null}
         {children}
         <AnalyticsScripts />
         <noscript>

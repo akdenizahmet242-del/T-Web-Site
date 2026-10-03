@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Lint · Tip · Format · Birim test · Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci # postinstall → prisma generate
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run format:check
+      - run: npm test
+      # Veritabanısız build: sayfalar boş veriyle üretilir, ISR ilk istekte doldurur.
+      - run: npm run build
+        env:
+          AUTH_SECRET: ci-build-secret-ci-build-secret-0000
+
+  integration:
+    name: Entegrasyon (PostgreSQL)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tws
+          POSTGRES_PASSWORD: tws_dev_password
+          POSTGRES_DB: tws
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U tws -d tws"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://tws:tws_dev_password@localhost:5432/tws?schema=public
+      AUTH_SECRET: ci-integration-secret-ci-integration-0000
+      SEED_DEMO_ORDERS: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run db:deploy
+      - run: npm run db:seed
+      - run: npm run test:integration

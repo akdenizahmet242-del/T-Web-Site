@@ -3,7 +3,7 @@ import { toMajorUnits } from "@/lib/money";
 import type { AnalyticsAdapter, AnalyticsItem, TrackedEvent } from "../events";
 
 type Fbq = (
-  command: "track",
+  command: "track" | "consent",
   event: string,
   params?: Record<string, unknown>,
   options?: { eventID: string },
