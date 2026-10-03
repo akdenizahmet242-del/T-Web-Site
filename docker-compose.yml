@@ -1,0 +1,23 @@
+# Yerel geliştirme altyapısı.
+# Host portu 5433: makinede zaten çalışan bir PostgreSQL (5432) ile çakışmasın.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: tws-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tws
+      POSTGRES_PASSWORD: tws_dev_password
+      POSTGRES_DB: tws
+    ports:
+      - "5433:5432"
+    volumes:
+      - tws-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tws -d tws"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  tws-pgdata:

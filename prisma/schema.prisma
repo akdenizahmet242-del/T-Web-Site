@@ -1,0 +1,383 @@
+// =============================================================================
+//  T-Web-Site · Prisma şeması (PostgreSQL · Prisma ORM 7)
+// -----------------------------------------------------------------------------
+//  Kurallar
+//  - Para alanları her zaman *minor unit* (kuruş) cinsinden Int tutulur:
+//      1.249,90 TL  →  124990
+//    Float/Decimal yok → yuvarlama hatası yok, RSC sınırında serileştirme derdi yok.
+//  - Ölçüler milimetre (Int), ağırlıklar gram (Int).
+//  - Sipariş satırları ürünün o anki halinin *snapshot*'ını taşır; ürün silinse
+//    ya da fiyatı değişse bile geçmiş siparişler bozulmaz.
+//  - Bağlantı adresi bu dosyada değil, `prisma.config.ts` içindedir (Prisma 7).
+// =============================================================================
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// -----------------------------------------------------------------------------
+//  Enum'lar
+// -----------------------------------------------------------------------------
+
+enum Role {
+  CUSTOMER
+  EDITOR // vitrin & içerik yönetimi
+  ADMIN // tam yetki
+}
+
+enum ProductStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum OrderStatus {
+  PENDING // sepet → sipariş oluşturuldu
+  AWAITING_PAYMENT // POS'a yönlendirildi / 3D Secure bekleniyor
+  PAID
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  UNPAID
+  AUTHORIZED
+  CAPTURED
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum PaymentProvider {
+  MOCK
+  IYZICO
+  PAYTR
+  STRIPE
+}
+
+/// Ön yüzdeki animasyon şablonu. Her şablonun kodda sabit tanımlı "slot"ları
+/// vardır (bkz. src/features/showcase/templates.ts). Panel yalnızca bu slotlara
+/// görsel atayabilir; böylece görsel değişse de GSAP zinciri kırılmaz.
+enum ShowcaseTemplate {
+  CLOCK_EXPLODED // saat: yelkovan döner, katmanlar ayrılır
+  CABINET_REVEAL // banyo dolabı: kapak açılır, raflar kayar
+  LAYER_STACK // arıtma/tesisat: filtre katmanları dikey ayrılır
+  BOOKMARK_FLIP // kitap ayracı: sayfa arasından süzülür
+  STATIC_HERO // animasyonsuz klasik banner
+}
+
+enum BannerPlacement {
+  HOME_HERO
+  HOME_SHOWCASE
+  HOME_PROMO_STRIP
+  CATEGORY_TOP
+}
+
+enum ImageKind {
+  GALLERY // ürün galerisi
+  LAYER // animasyon katmanı (şeffaf PNG/WebP/AVIF)
+  LIFESTYLE // ortam fotoğrafı
+}
+
+// -----------------------------------------------------------------------------
+//  Kimlik (Auth.js uyumlu)
+// -----------------------------------------------------------------------------
+
+model User {
+  id            String     @id @default(cuid())
+  email         String     @unique
+  emailVerified DateTime?
+  name          String?
+  image         String?
+  /// bcrypt hash — yalnızca e-posta/şifre ile giriş yapan kullanıcılar için.
+  passwordHash  String?
+  role          Role       @default(CUSTOMER)
+  phone         String?
+  accounts      Account[]
+  sessions      Session[]
+  orders        Order[]
+  cartItems     CartItem[]
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+}
+
+/// OAuth sağlayıcı hesapları (Google, Apple …) — Auth.js adapter şeması.
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+/// Veritabanı oturumları (JWT stratejisinde boş kalır, adapter uyumu için durur).
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// -----------------------------------------------------------------------------
+//  Katalog
+// -----------------------------------------------------------------------------
+
+model Category {
+  id             String     @id @default(cuid())
+  slug           String     @unique
+  name           String
+  description    String?
+  /// Kategori sayfası ve kartları için marka rengi (ör. "#b08d57").
+  accentColor    String?
+  heroImageUrl   String?
+  /// Hiyerarşi: "Su Tesisatı" > "Arıtma Filtreleri"
+  parentId       String?
+  parent         Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children       Category[] @relation("CategoryTree")
+  products       Product[]
+  sortOrder      Int        @default(0)
+  isActive       Boolean    @default(true)
+  seoTitle       String?
+  seoDescription String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@index([parentId])
+  @@index([isActive, sortOrder])
+}
+
+model Product {
+  id                  String            @id @default(cuid())
+  slug                String            @unique
+  sku                 String            @unique
+  name                String
+  /// Kart ve vitrinlerde kullanılan kısa slogan.
+  tagline             String?
+  description         String            @db.Text
+  brand               String?
+  status              ProductStatus     @default(DRAFT)
+  /// Kuruş cinsinden satış fiyatı (KDV dahil).
+  priceMinor          Int
+  /// Üstü çizili "eski fiyat" (kuruş).
+  compareAtPriceMinor Int?
+  currency            String            @default("TRY") @db.Char(3)
+  /// KDV oranı (%) — 1, 10, 20 …
+  vatRate             Int               @default(20)
+  stock               Int               @default(0)
+  lowStockThreshold   Int               @default(5)
+  isFeatured          Boolean           @default(false)
+  /// Ürün detay sayfasında kullanılacak interaktif sahne (opsiyonel).
+  showcaseTemplate    ShowcaseTemplate?
+  categoryId          String
+  category            Category          @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  detail              ProductDetail?
+  images              ProductImage[]
+  cartItems           CartItem[]
+  orderItems          OrderItem[]
+  banners             ShowcaseBanner[]
+  seoTitle            String?
+  seoDescription      String?
+  publishedAt         DateTime?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  @@index([categoryId, status])
+  @@index([status, isFeatured])
+  @@index([status, publishedAt])
+}
+
+/// Teknik detaylar — 1:1. Ana tablo hafif kalsın, liste sorguları hızlı olsun diye ayrı.
+model ProductDetail {
+  id                 String   @id @default(cuid())
+  productId          String   @unique
+  product            Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  /// En (mm)
+  widthMm            Int?
+  /// Boy (mm)
+  heightMm           Int?
+  /// Derinlik (mm)
+  depthMm            Int?
+  /// Net ağırlık (g)
+  weightGrams        Int?
+  /// Kargo/desi hesabı için paketli ölçüler
+  packageWidthMm     Int?
+  packageHeightMm    Int?
+  packageDepthMm     Int?
+  packageWeightGrams Int?
+  material           String?
+  color              String?
+  finish             String?
+  origin             String?
+  warrantyMonths     Int?
+  /// Esnek teknik özellik tablosu:
+  /// [{ "group": "Mekanizma", "label": "Tip", "value": "Sessiz süpürme", "unit": null }]
+  specs              Json     @default("[]")
+  careInstructions   String?  @db.Text
+  /// Kutu içeriği: ["Saat", "Montaj vidası", "AA pil"]
+  inTheBox           String[] @default([])
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model ProductImage {
+  id          String    @id @default(cuid())
+  productId   String
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  kind        ImageKind @default(GALLERY)
+  /// LAYER görselleri için şablon slot anahtarı (ör. "dial", "minuteHand").
+  layerKey    String?
+  url         String
+  alt         String
+  width       Int
+  height      Int
+  /// next/image `placeholder="blur"` için küçük base64 LQIP.
+  blurDataUrl String?   @db.Text
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+
+  @@index([productId, kind, sortOrder])
+}
+
+// -----------------------------------------------------------------------------
+//  Sepet & Sipariş
+// -----------------------------------------------------------------------------
+
+/// Oturum açmış kullanıcının sunucu tarafı sepeti. Misafir sepeti tarayıcıda
+/// (Zustand + localStorage) yaşar; giriş yapılınca bu tabloya birleştirilir.
+model CartItem {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity  Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, productId])
+  @@index([productId])
+}
+
+model Order {
+  id               String           @id @default(cuid())
+  /// İnsan okunur sipariş numarası: "TWS-2026-000123"
+  orderNumber      String           @unique
+  /// Misafir siparişlerinde null.
+  userId           String?
+  user             User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  email            String
+  phone            String?
+  status           OrderStatus      @default(PENDING)
+  paymentStatus    PaymentStatus    @default(UNPAID)
+  paymentProvider  PaymentProvider?
+  /// POS tarafındaki işlem/ödeme kimliği
+  paymentReference String?
+  /// Çift tıklama / yeniden deneme durumunda mükerrer sipariş oluşmasını engeller.
+  idempotencyKey   String?          @unique
+  currency         String           @default("TRY") @db.Char(3)
+  subtotalMinor    Int
+  shippingMinor    Int              @default(0)
+  discountMinor    Int              @default(0)
+  taxMinor         Int              @default(0)
+  totalMinor       Int
+  /// Adres snapshot'ları: { fullName, line1, line2, district, city, postalCode, country }
+  shippingAddress  Json
+  billingAddress   Json?
+  customerNote     String?
+  items            OrderItem[]
+  placedAt         DateTime         @default(now())
+  paidAt           DateTime?
+  shippedAt        DateTime?
+  cancelledAt      DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@index([paymentStatus])
+}
+
+model OrderItem {
+  id             String   @id @default(cuid())
+  orderId        String
+  order          Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  /// Ürün sonradan silinirse sipariş geçmişi korunur.
+  productId      String?
+  product        Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  // --- snapshot ---
+  productName    String
+  sku            String
+  imageUrl       String?
+  unitPriceMinor Int
+  vatRate        Int
+  quantity       Int
+  lineTotalMinor Int
+
+  @@index([orderId])
+  @@index([productId])
+}
+
+// -----------------------------------------------------------------------------
+//  Vitrin
+// -----------------------------------------------------------------------------
+
+/// Ana sayfa / kategori vitrinleri. `layers` alanı, seçilen şablonun slotlarına
+/// görsel atar. Eksik slot → koddaki varsayılan SVG katmanı devreye girer.
+model ShowcaseBanner {
+  id        String           @id @default(cuid())
+  /// Panelde sabit referans: "home-clock-showcase"
+  key       String           @unique
+  placement BannerPlacement
+  template  ShowcaseTemplate
+  eyebrow   String?
+  title     String
+  subtitle  String?
+  ctaLabel  String?
+  ctaHref   String?
+  productId String?
+  product   Product?         @relation(fields: [productId], references: [id], onDelete: SetNull)
+  /// { "dial": { "url": "...", "alt": "...", "width": 1200, "height": 1200 }, ... }
+  layers    Json             @default("{}")
+  /// Şablon metinleri/adımları: { "steps": [{ "title": "...", "body": "..." }] }
+  content   Json             @default("{}")
+  /// { "background": "#0b0b0c", "accent": "#c9a36a" }
+  theme     Json             @default("{}")
+  sortOrder Int              @default(0)
+  isActive  Boolean          @default(true)
+  startsAt  DateTime?
+  endsAt    DateTime?
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@index([placement, isActive, sortOrder])
+}
